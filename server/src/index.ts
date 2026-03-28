@@ -6,6 +6,7 @@ import {
   unicreditData,
   intesaData,
   splitwiseData,
+  store,
   type SplitwiseDebt,
 } from "./mockData.js";
 
@@ -241,6 +242,161 @@ const server = new McpServer(
 
       return {
         structuredContent: splitwiseData,
+        content: [{ type: "text", text }],
+      };
+    },
+  )
+  .registerWidget(
+    "send_payment",
+    {
+      description: "Simulates sending a payment to a person, optionally settling a Splitwise debt. Updates balances and transaction history in real time.",
+    },
+    {
+      description:
+        "Send a payment to someone. Deducts from the specified account, appends a transaction, and settles any matching Splitwise debt. Use this when the user wants to pay someone (e.g. 'pay the debt to Luca', 'send €23.50 to Sara via Revolut').",
+      inputSchema: {
+        to: z.string().describe("Recipient name, e.g. 'Luca' or 'Sara Bianchi'"),
+        amount: z.number().positive().describe("Amount in EUR to send"),
+        from_account: z
+          .enum(["revolut", "unicredit", "paypal"])
+          .describe("Source account: 'revolut', 'unicredit', or 'paypal'"),
+        note: z.string().optional().describe("Optional payment note"),
+      },
+    },
+    async ({ to, amount, from_account, note }) => {
+      const today = new Date().toISOString().split("T")[0];
+
+      // ── 1. Resolve recipient (fuzzy match on first name or full name) ──────
+      const allUsers = [store.splitwise.current_user, ...store.splitwise.contacts];
+      const recipient = allUsers.find(
+        (u) =>
+          u.name.toLowerCase().includes(to.toLowerCase()) ||
+          to.toLowerCase().includes(u.name.split(" ")[0].toLowerCase()),
+      );
+      const recipientName = recipient?.name ?? to;
+
+      // ── 2. Deduct from account & append transaction ────────────────────────
+      let previousBalance = 0;
+      let newBalance = 0;
+
+      if (from_account === "revolut") {
+        const eurPocket = store.revolut.pockets.find((p) => p.currency === "EUR");
+        if (eurPocket) {
+          previousBalance = eurPocket.balance;
+          eurPocket.balance = Math.round((eurPocket.balance - amount) * 100) / 100;
+          newBalance = eurPocket.balance;
+        }
+        const newTx = {
+          id: `rev_pay_${Date.now()}`,
+          date: today,
+          description: `Payment to ${recipientName}${note ? ` — ${note}` : ""}`,
+          amount: -amount,
+          currency: "EUR" as const,
+          category: "Transfer",
+          type: "debit" as const,
+          counterparty: recipientName,
+        };
+        store.revolut.transactions.unshift(newTx);
+      } else if (from_account === "unicredit") {
+        previousBalance = store.unicredit.current_balance;
+        store.unicredit.current_balance =
+          Math.round((store.unicredit.current_balance - amount) * 100) / 100;
+        store.unicredit.available_balance =
+          Math.round((store.unicredit.available_balance - amount) * 100) / 100;
+        newBalance = store.unicredit.current_balance;
+        const newTx = {
+          id: `uni_pay_${Date.now()}`,
+          date: today,
+          description: `BONIFICO A ${recipientName.toUpperCase()}${note ? ` - ${note.toUpperCase()}` : ""}`,
+          amount: -amount,
+          type: "debit" as const,
+          category: "Transfer",
+          balance_after: newBalance,
+        };
+        store.unicredit.transactions.unshift(newTx);
+      } else if (from_account === "paypal") {
+        previousBalance = store.paypal.balance;
+        store.paypal.balance = Math.round((store.paypal.balance - amount) * 100) / 100;
+        newBalance = store.paypal.balance;
+        const newTx = {
+          id: `pp_pay_${Date.now()}`,
+          date: today,
+          description: `Payment to ${recipientName}${note ? ` — ${note}` : ""}`,
+          amount: -amount,
+          currency: "EUR" as const,
+          type: "sent" as const,
+          status: "completed" as const,
+          counterparty: recipientName,
+        };
+        store.paypal.transactions.unshift(newTx);
+      }
+
+      // ── 3. Settle Splitwise debt if applicable ─────────────────────────────
+      const marcoId = store.splitwise.current_user.id;
+      let settledDebt: { from: number; to: number; amount: number; currency: string } | null = null;
+
+      if (recipient) {
+        // Case B: Marco owes recipient (from === marcoId, to === recipient.id)
+        const debtIdx = store.splitwise.debts.findIndex(
+          (d) => d.from === marcoId && d.to === recipient.id,
+        );
+        if (debtIdx !== -1) {
+          settledDebt = store.splitwise.debts[debtIdx];
+          store.splitwise.debts.splice(debtIdx, 1);
+        } else {
+          // Case C: recipient owes Marco (from === recipient.id, to === marcoId) — mark settled
+          const debtIdx2 = store.splitwise.debts.findIndex(
+            (d) => d.from === recipient.id && d.to === marcoId,
+          );
+          if (debtIdx2 !== -1) {
+            settledDebt = store.splitwise.debts[debtIdx2];
+          }
+        }
+      }
+
+      // ── 4. Build response ──────────────────────────────────────────────────
+      const accountLabel =
+        from_account === "revolut"
+          ? "Revolut"
+          : from_account === "unicredit"
+          ? "UniCredit"
+          : "PayPal";
+
+      const structuredContent = {
+        status: "success",
+        payment: {
+          to: recipientName,
+          amount,
+          currency: "EUR",
+          from_account: accountLabel,
+          note: note ?? null,
+          date: today,
+        },
+        balance: {
+          previous: previousBalance,
+          new: newBalance,
+          account: accountLabel,
+        },
+        splitwise_settled: settledDebt
+          ? {
+              settled: true,
+              debt_amount: settledDebt.amount,
+              currency: settledDebt.currency,
+            }
+          : { settled: false },
+      };
+
+      const debtNote = settledDebt
+        ? ` Splitwise debt of €${settledDebt.amount.toFixed(2)} marked as settled.`
+        : "";
+
+      const text =
+        `Payment sent: €${amount.toFixed(2)} to ${recipientName} via ${accountLabel}.\n` +
+        `New ${accountLabel} balance: €${newBalance.toFixed(2)} (was €${previousBalance.toFixed(2)}).` +
+        debtNote;
+
+      return {
+        structuredContent,
         content: [{ type: "text", text }],
       };
     },

@@ -802,3 +802,14 @@ export const splitwiseData: SplitwiseData = {
     },
   ],
 };
+
+// ─── Mutable in-memory store ──────────────────────────────────────────────────
+// All handlers read/write through `store` so mutations persist across tool calls.
+
+export const store = {
+  revolut: revolutData,
+  paypal: paypalData,
+  unicredit: unicreditData,
+  intesa: intesaData,
+  splitwise: splitwiseData,
+};
