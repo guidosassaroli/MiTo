@@ -400,7 +400,113 @@ const server = new McpServer(
         content: [{ type: "text", text }],
       };
     },
-  );
+  )
+  .registerWidget(
+    "get_summary",
+  {
+    description:
+      "Returns a full financial dashboard summary for Marco Rossi: all account balances, last 3 expenses across all accounts, spending by 5 categories, and insight/anomaly cards.",
+  },
+  {
+    description:
+      "Show a complete financial dashboard: balances across all accounts, recent expenses, spending breakdown by category, and actionable insights. Use this as the default overview when the user asks for a summary, overview, or dashboard.",
+    inputSchema: {},
+  },
+  async () => {
+    // ── Accounts ──────────────────────────────────────────────────────────
+    const revolutEur = store.revolut.pockets.find((p) => p.currency === "EUR");
+    const accounts = [
+      { id: "revolut", name: "Revolut", balance: revolutEur?.balance ?? 0, type: "wallet", currency: "EUR" },
+      { id: "paypal", name: "PayPal", balance: store.paypal.balance, type: "wallet", currency: "EUR" },
+      { id: "unicredit", name: "UniCredit", balance: store.unicredit.current_balance, type: "checking", currency: "EUR" },
+      { id: "intesa", name: "Intesa SanPaolo", balance: store.intesa.balance, type: "savings", currency: "EUR" },
+    ];
+    const totalBalance = accounts.reduce((s, a) => s + a.balance, 0);
+
+    // ── Last 3 expenses across all accounts (debits only, merged) ─────────
+    type AnyTx = { id: string; date: string; description: string; amount: number; source: string; category: string };
+
+    const revolutExpenses: AnyTx[] = store.revolut.transactions
+      .filter((t) => t.amount < 0)
+      .map((t) => ({ id: t.id, date: t.date, description: t.description, amount: t.amount, source: "Revolut", category: t.category }));
+
+    const paypalExpenses: AnyTx[] = store.paypal.transactions
+      .filter((t) => t.amount < 0)
+      .map((t) => ({ id: t.id, date: t.date, description: t.description, amount: t.amount, source: "PayPal", category: "Shopping" }));
+
+    const unicreditExpenses: AnyTx[] = store.unicredit.transactions
+      .filter((t) => t.amount < 0)
+      .map((t) => ({ id: t.id, date: t.date, description: t.description, amount: t.amount, source: "UniCredit", category: t.category }));
+
+    const intesaExpenses: AnyTx[] = store.intesa.transactions
+      .filter((t) => t.amount < 0)
+      .map((t) => ({ id: t.id, date: t.date, description: t.description, amount: t.amount, source: "Intesa", category: t.category }));
+
+    const allExpenses = [...revolutExpenses, ...paypalExpenses, ...unicreditExpenses, ...intesaExpenses]
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 3);
+
+    // ── Spending by category (5 buckets) ─────────────────────────────────
+    const catMap: Record<string, { label: string; amount: number; color: string }> = {
+      groceries: { label: "Groceries", amount: 0, color: "oklch(55% 0.16 155)" },
+      dining: { label: "Dining", amount: 0, color: "oklch(58% 0.18 55)" },
+      subscriptions: { label: "Subscriptions", amount: 0, color: "oklch(52% 0.15 260)" },
+      transport: { label: "Transport", amount: 0, color: "oklch(54% 0.15 320)" },
+      rent_utilities: { label: "Rent & Utilities", amount: 0, color: "oklch(50% 0.12 25)" },
+    };
+
+    const categorizeTx = (cat: string, amount: number) => {
+      const normalized = cat.toLowerCase();
+      const abs = Math.abs(amount);
+      if (normalized.includes("groceri") || normalized === "groceries") catMap.groceries.amount += abs;
+      else if (normalized.includes("dining") || normalized.includes("food") || normalized.includes("restaurant") || normalized.includes("bar")) catMap.dining.amount += abs;
+      else if (normalized.includes("entertainment") || normalized.includes("subscription")) catMap.subscriptions.amount += abs;
+      else if (normalized.includes("transport")) catMap.transport.amount += abs;
+      else if (normalized.includes("rent") || normalized.includes("utilities") || normalized.includes("telecom")) catMap.rent_utilities.amount += abs;
+    };
+
+    [...revolutExpenses, ...paypalExpenses, ...unicreditExpenses, ...intesaExpenses].forEach((t) =>
+      categorizeTx(t.category, t.amount),
+    );
+
+    const spendingByCategory = Object.entries(catMap).map(([id, v]) => ({
+      id,
+      label: v.label,
+      amount: Math.round(v.amount * 100) / 100,
+      color: v.color,
+    }));
+
+    // ── Insights ─────────────────────────────────────────────────────────
+    const insights = [
+      { id: "invest", badge: "INVEST", body: "You have €3,324.70 idle above your €500 buffer. Consider a €200/month ETF." },
+      { id: "cancel", badge: "CANCEL", body: "Adobe Creative Cloud costs €14.99/month. No usage in 6 weeks. Cancel?" },
+      { id: "save", badge: "SAVE", body: "Move €500 from UniCredit to Intesa savings to hit your 3-month emergency fund." },
+    ];
+
+    const structuredContent = {
+      person: "Marco Rossi",
+      accounts,
+      total_balance: Math.round(totalBalance * 100) / 100,
+      recent_expenses: allExpenses,
+      spending_by_category: spendingByCategory,
+      insights,
+    };
+
+    const text =
+      `MiTo Summary — Marco Rossi\n` +
+      `Total balance: €${totalBalance.toFixed(2)}\n` +
+      accounts.map((a) => `  ${a.name}: €${a.balance.toFixed(2)}`).join("\n") +
+      `\n\nLast 3 expenses:\n` +
+      allExpenses.map((t) => `  ${t.date} ${t.description} (${t.source}): €${Math.abs(t.amount).toFixed(2)}`).join("\n") +
+      `\n\nSpending by category:\n` +
+      spendingByCategory.map((c) => `  ${c.label}: €${c.amount.toFixed(2)}`).join("\n");
+
+    return {
+      structuredContent,
+      content: [{ type: "text", text }],
+    };
+  },
+);
 
 server.run();
 
