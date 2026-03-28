@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { mountWidget } from "skybridge/web";
 import { useToolInfo } from "../helpers.js";
 
@@ -85,6 +85,47 @@ function initials(name: string) {
   return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 }
 
+// ─── Animated number hook ─────────────────────────────────────────────────────
+
+function easeOutCubic(t: number) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function useAnimatedValue(target: number, duration = 600): number {
+  const [display, setDisplay] = useState(target);
+  const fromRef = useRef(target);
+  const startRef = useRef<number | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const from = fromRef.current;
+    if (from === target) return;
+
+    // Cancel any in-flight animation
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    startRef.current = null;
+
+    function tick(now: number) {
+      if (startRef.current === null) startRef.current = now;
+      const elapsed = now - startRef.current;
+      const t = Math.min(elapsed / duration, 1);
+      const eased = easeOutCubic(t);
+      setDisplay(from + (target - from) * eased);
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        fromRef.current = target;
+        rafRef.current = null;
+      }
+    }
+
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); };
+  }, [target, duration]);
+
+  return display;
+}
+
 // ─── Font loader ──────────────────────────────────────────────────────────────
 
 function FontLoader() {
@@ -131,6 +172,72 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 // ─── 1. Accounts Overview ─────────────────────────────────────────────────────
 
+function AccountRow({ acc }: { acc: Account }) {
+  const animated = useAnimatedValue(acc.balance);
+  const prevRef = useRef(acc.balance);
+  const [flash, setFlash] = useState<"up" | "down" | null>(null);
+  const accent = ACCOUNT_HUE[acc.id] ?? c.inkSub;
+
+  useEffect(() => {
+    if (acc.balance !== prevRef.current) {
+      setFlash(acc.balance > prevRef.current ? "up" : "down");
+      prevRef.current = acc.balance;
+      const t = setTimeout(() => setFlash(null), 900);
+      return () => clearTimeout(t);
+    }
+  }, [acc.balance]);
+
+  const flashColor = flash === "up" ? c.posNum : flash === "down" ? c.negNum : c.ink;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "10px 0",
+        borderBottom: `1px solid ${c.rule}`,
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+      }}
+    >
+      {/* Avatar */}
+      <div style={{
+        width: 30,
+        height: 30,
+        borderRadius: "50%",
+        background: `color-mix(in oklch, ${accent} 12%, ${c.bg})`,
+        border: `1px solid color-mix(in oklch, ${accent} 28%, transparent)`,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 10,
+        fontWeight: 700,
+        color: accent,
+        letterSpacing: "0.04em",
+        flexShrink: 0,
+      }}>
+        {initials(acc.name)}
+      </div>
+
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: c.ink }}>{acc.name}</div>
+        <div style={{ fontSize: 11, color: c.inkSub, textTransform: "capitalize" as const }}>{acc.type}</div>
+      </div>
+
+      <div style={{
+        fontSize: 14,
+        fontWeight: 700,
+        color: flashColor,
+        fontVariantNumeric: "tabular-nums",
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+        transition: "color 300ms ease",
+      }}>
+        {fmt(animated)}
+      </div>
+    </div>
+  );
+}
+
 function AccountsSection({ data }: { data: SummaryData }) {
   return (
     <div style={{ marginBottom: 32 }}>
@@ -153,56 +260,9 @@ function AccountsSection({ data }: { data: SummaryData }) {
 
       {/* Account rows */}
       <div style={{ borderTop: `1px solid ${c.rule}` }}>
-        {data.accounts.map((acc) => {
-          const accent = ACCOUNT_HUE[acc.id] ?? c.inkSub;
-          return (
-            <div
-              key={acc.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "10px 0",
-                borderBottom: `1px solid ${c.rule}`,
-                fontFamily: "'Plus Jakarta Sans', sans-serif",
-              }}
-            >
-              {/* Avatar */}
-              <div style={{
-                width: 30,
-                height: 30,
-                borderRadius: "50%",
-                background: `color-mix(in oklch, ${accent} 12%, ${c.bg})`,
-                border: `1px solid color-mix(in oklch, ${accent} 28%, transparent)`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 10,
-                fontWeight: 700,
-                color: accent,
-                letterSpacing: "0.04em",
-                flexShrink: 0,
-              }}>
-                {initials(acc.name)}
-              </div>
-
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: c.ink }}>{acc.name}</div>
-                <div style={{ fontSize: 11, color: c.inkSub, textTransform: "capitalize" as const }}>{acc.type}</div>
-              </div>
-
-              <div style={{
-                fontSize: 14,
-                fontWeight: 700,
-                color: c.ink,
-                fontVariantNumeric: "tabular-nums",
-                fontFamily: "'Plus Jakarta Sans', sans-serif",
-              }}>
-                {fmt(acc.balance)}
-              </div>
-            </div>
-          );
-        })}
+        {data.accounts.map((acc) => (
+          <AccountRow key={acc.id} acc={acc} />
+        ))}
       </div>
     </div>
   );
@@ -490,44 +550,129 @@ function DonutChart({ data }: { data: SummaryData }) {
 
 // ─── 4. Insights ──────────────────────────────────────────────────────────────
 
-function InsightsSection({ data }: { data: SummaryData }) {
+function InsightsSection({ data, saved, onSave }: { data: SummaryData; saved: boolean; onSave: () => void }) {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
   return (
     <div>
       <SectionLabel>Insights &amp; tips</SectionLabel>
-      <div style={{ display: "flex", flexDirection: "column" as const, gap: 0, borderTop: `1px solid ${c.rule}` }}>
+      <style>{`
+        @keyframes checkPop {
+          0%   { transform: scale(0.4); opacity: 0; }
+          60%  { transform: scale(1.2); opacity: 1; }
+          100% { transform: scale(1);   opacity: 1; }
+        }
+        @keyframes successFill {
+          0%   { opacity: 0; transform: scaleX(0.96) scaleY(0.9); }
+          100% { opacity: 1; transform: scaleX(1) scaleY(1); }
+        }
+      `}</style>
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 10 }}>
         {data.insights.map((card) => {
           const palette = BADGE_PALETTE[card.badge] ?? { bg: c.bgAlt, fg: c.inkMid };
+          const isSave = card.badge === "SAVE";
+          const isHov = hoveredId === card.id;
+          const showSuccess = isSave && saved;
+          const isInteractive = !showSuccess;
+
           return (
             <div
               key={card.id}
+              role="button"
+              tabIndex={0}
+              onClick={isSave && !saved ? onSave : undefined}
+              onMouseEnter={() => setHoveredId(card.id)}
+              onMouseLeave={() => setHoveredId(null)}
+              onKeyDown={isSave && !saved ? (e) => { if (e.key === "Enter" || e.key === " ") onSave(); } : undefined}
               style={{
                 display: "flex",
                 alignItems: "flex-start",
                 gap: 10,
-                padding: "11px 0",
-                borderBottom: `1px solid ${c.rule}`,
+                padding: "12px 14px",
+                borderRadius: 10,
+                border: showSuccess
+                  ? `1.5px solid color-mix(in oklch, ${palette.fg} 40%, transparent)`
+                  : `1.5px solid color-mix(in oklch, ${palette.fg} ${isHov ? "28%" : "16%"}, transparent)`,
+                background: showSuccess
+                  ? `color-mix(in oklch, ${palette.fg} 12%, ${c.surface})`
+                  : isHov
+                    ? `color-mix(in oklch, ${palette.fg} 7%, ${c.surface})`
+                    : c.surface,
+                cursor: isInteractive ? "pointer" : "default",
                 fontFamily: "'Plus Jakarta Sans', sans-serif",
+                boxShadow: isHov && !showSuccess
+                  ? `0 2px 10px color-mix(in oklch, ${palette.fg} 12%, transparent)`
+                  : showSuccess
+                    ? `0 2px 14px color-mix(in oklch, ${palette.fg} 18%, transparent)`
+                    : "none",
+                transform: isHov && !showSuccess ? "translateY(-1px)" : "translateY(0)",
+                transition: "background 200ms ease, border-color 200ms ease, box-shadow 200ms ease, transform 150ms ease",
+                animation: showSuccess ? "successFill 300ms ease forwards" : undefined,
+                overflow: "hidden",
+                position: "relative" as const,
               }}
             >
-              {/* Badge */}
-              <span style={{
-                flexShrink: 0,
-                marginTop: 1,
-                fontSize: 9,
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                padding: "3px 7px",
-                borderRadius: 4,
-                background: palette.bg,
-                color: palette.fg,
-                border: `1px solid color-mix(in oklch, ${palette.fg} 20%, transparent)`,
-              }}>
-                {card.badge}
-              </span>
-              {/* Body */}
-              <span style={{ fontSize: 12, color: c.inkMid, lineHeight: 1.5 }}>
-                {card.body}
-              </span>
+              {showSuccess ? (
+                /* ── Success state ── */
+                <>
+                  <span style={{
+                    flexShrink: 0,
+                    width: 22,
+                    height: 22,
+                    borderRadius: "50%",
+                    background: palette.fg,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    animation: "checkPop 380ms cubic-bezier(0.34,1.56,0.64,1) forwards",
+                    marginTop: 1,
+                  }}>
+                    <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
+                      <path d="M1 4.5L4 7.5L10 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: palette.fg, marginBottom: 2 }}>
+                      Transfer queued!
+                    </div>
+                    <div style={{ fontSize: 11, color: c.inkMid, lineHeight: 1.4 }}>
+                      €500 will move to Intesa Sanpaolo Savings shortly.
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* ── Default state ── */
+                <>
+                  <span style={{
+                    flexShrink: 0,
+                    marginTop: 1,
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: "0.08em",
+                    padding: "3px 7px",
+                    borderRadius: 4,
+                    background: palette.bg,
+                    color: palette.fg,
+                    border: `1px solid color-mix(in oklch, ${palette.fg} 20%, transparent)`,
+                  }}>
+                    {card.badge}
+                  </span>
+                  <span style={{ fontSize: 12, color: c.inkMid, lineHeight: 1.5, flex: 1 }}>
+                    {card.body}
+                  </span>
+                  {/* Arrow hint — all buttons */}
+                  <span style={{
+                    flexShrink: 0,
+                    alignSelf: "center",
+                    fontSize: 14,
+                    color: `color-mix(in oklch, ${palette.fg} ${isHov ? "80%" : "35%"}, transparent)`,
+                    transition: "color 200ms ease, transform 150ms ease",
+                    transform: isHov ? "translateX(2px)" : "translateX(0)",
+                  }}>
+                    →
+                  </span>
+                </>
+              )}
             </div>
           );
         })}
@@ -538,9 +683,25 @@ function InsightsSection({ data }: { data: SummaryData }) {
 
 // ─── Root Widget ──────────────────────────────────────────────────────────────
 
+const SAVE_AMOUNT = 500;
+
 function SummaryWidget() {
   const { output } = useToolInfo<"get_summary">();
   const data = output as unknown as SummaryData | undefined;
+  const [saved, setSaved] = useState(false);
+
+  // Derive adjusted data after SAVE transfer (€500 from UniCredit → Intesa Savings)
+  const displayData: SummaryData | undefined = data && saved
+    ? {
+        ...data,
+        accounts: data.accounts.map((acc) => {
+          if (acc.id === "unicredit")  return { ...acc, balance: acc.balance - SAVE_AMOUNT };
+          if (acc.id === "intesa")     return { ...acc, balance: acc.balance + SAVE_AMOUNT };
+          return acc;
+        }),
+        total_balance: data.total_balance, // unchanged — money moved between own accounts
+      }
+    : data;
 
   return (
     <>
@@ -551,7 +712,7 @@ function SummaryWidget() {
         svg path { will-change: opacity; }
       `}</style>
 
-      {!data ? (
+      {!displayData ? (
         <Skeleton />
       ) : (
         <div
@@ -574,10 +735,10 @@ function SummaryWidget() {
             MiTo
           </div>
 
-          <AccountsSection data={data} />
-          <ExpensesSection data={data} />
-          <DonutChart data={data} />
-          <InsightsSection data={data} />
+          <AccountsSection data={displayData} />
+          <ExpensesSection data={displayData} />
+          <DonutChart data={displayData} />
+          <InsightsSection data={displayData} saved={saved} onSave={() => setSaved(true)} />
         </div>
       )}
     </>
