@@ -60,7 +60,7 @@ function FontLoader() {
 
 function Skeleton() {
   return (
-    <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", background: c.bg, width: "100%", aspectRatio: "21 / 9", padding: "28px 20px", boxSizing: "border-box", overflowY: "auto" }}>
+    <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", background: c.bg, width: "100%", padding: "28px 20px", boxSizing: "border-box" }}>
       <style>{`@keyframes shimmer { 0%{opacity:1} 50%{opacity:.45} 100%{opacity:1} } .sk{background:${c.bgAlt};border-radius:3px;animation:shimmer 1.6s ease-in-out infinite}`}</style>
       <div className="sk" style={{ width: 80, height: 11, marginBottom: 32 }} />
       <div style={{ display:"flex", justifyContent:"center", marginBottom: 16 }}>
@@ -123,10 +123,8 @@ function SendPaymentWidget() {
           fontFamily: "'Plus Jakarta Sans', sans-serif",
           background: c.bg,
           width: "100%",
-          aspectRatio: "21 / 9",
           padding: "28px 20px 40px",
           color: c.ink,
-          overflowY: "auto",
         }}>
           {/* Wordmark */}
           <div style={{

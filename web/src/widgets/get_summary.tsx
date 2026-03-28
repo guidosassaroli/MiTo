@@ -561,7 +561,6 @@ function SummaryWidget() {
             width: "100%",
             padding: "28px 24px 44px",
             color: c.ink,
-            overflowY: "auto",
           }}
         >
           {/* Wordmark */}

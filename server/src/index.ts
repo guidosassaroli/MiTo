@@ -253,13 +253,15 @@ const server = new McpServer(
     },
     {
       description:
-        "Send a payment to someone. Deducts from the specified account, appends a transaction, and settles any matching Splitwise debt. Use this when the user wants to pay someone (e.g. 'pay the debt to Luca', 'send €23.50 to Sara via Revolut').",
+        "Send a payment to someone, settle a debt, or pay what Marco owes. Deducts from the specified account, appends a transaction, and clears any matching Splitwise debt. Use this when the user wants to: pay someone, send money, settle a debt, pay what I owe, pay my debt to X, transfer funds to a contact. If no account is specified, default to 'revolut'.",
       inputSchema: {
         to: z.string().describe("Recipient name, e.g. 'Luca' or 'Sara Bianchi'"),
         amount: z.number().positive().describe("Amount in EUR to send"),
         from_account: z
           .enum(["revolut", "unicredit", "paypal"])
-          .describe("Source account: 'revolut', 'unicredit', or 'paypal'"),
+          .optional()
+          .default("revolut")
+          .describe("Source account: 'revolut' (default), 'unicredit', or 'paypal'. Use 'revolut' if the user does not specify an account."),
         note: z.string().optional().describe("Optional payment note"),
       },
     },
@@ -336,21 +338,13 @@ const server = new McpServer(
       let settledDebt: { from: number; to: number; amount: number; currency: string } | null = null;
 
       if (recipient) {
-        // Case B: Marco owes recipient (from === marcoId, to === recipient.id)
+        // Only settle debts where Marco owes the recipient (from === marcoId, to === recipient.id)
         const debtIdx = store.splitwise.debts.findIndex(
           (d) => d.from === marcoId && d.to === recipient.id,
         );
         if (debtIdx !== -1) {
           settledDebt = store.splitwise.debts[debtIdx];
           store.splitwise.debts.splice(debtIdx, 1);
-        } else {
-          // Case C: recipient owes Marco (from === recipient.id, to === marcoId) — mark settled
-          const debtIdx2 = store.splitwise.debts.findIndex(
-            (d) => d.from === recipient.id && d.to === marcoId,
-          );
-          if (debtIdx2 !== -1) {
-            settledDebt = store.splitwise.debts[debtIdx2];
-          }
         }
       }
 

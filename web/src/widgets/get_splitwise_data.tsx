@@ -141,10 +141,8 @@ function Skeleton() {
         fontFamily: "'Plus Jakarta Sans', sans-serif",
         background: c.bg,
         width: "100%",
-        aspectRatio: "21 / 9",
         padding: "28px 20px",
         boxSizing: "border-box",
-        overflowY: "auto",
       }}
     >
       <style>{`
@@ -517,10 +515,8 @@ function SplitwiseWidget() {
             fontFamily: "'Plus Jakarta Sans', sans-serif",
             background: c.bg,
             width: "100%",
-            aspectRatio: "21 / 9",
             padding: "28px 20px 40px",
             color: c.ink,
-            overflowY: "auto",
           }}
         >
           {/* App wordmark */}
