@@ -9,7 +9,7 @@ function Placeholder() {
   const { output } = useToolInfo<"placeholder">();
 
   return (
-    <div style={{ padding: "1rem", fontFamily: "sans-serif" }}>
+    <div style={{ width: "100%", aspectRatio: "21 / 9", padding: "1rem", fontFamily: "sans-serif", boxSizing: "border-box" }}>
       <strong>MiTo — Placeholder Widget</strong>
       <p style={{ marginTop: "0.5rem", color: "#555" }}>
         {output?.message ?? "Loading…"}

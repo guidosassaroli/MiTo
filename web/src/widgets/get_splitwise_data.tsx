@@ -140,9 +140,11 @@ function Skeleton() {
       style={{
         fontFamily: "'Plus Jakarta Sans', sans-serif",
         background: c.bg,
-        minHeight: "100vh",
+        width: "100%",
+        aspectRatio: "21 / 9",
         padding: "28px 20px",
         boxSizing: "border-box",
+        overflowY: "auto",
       }}
     >
       <style>{`
@@ -514,10 +516,11 @@ function SplitwiseWidget() {
           style={{
             fontFamily: "'Plus Jakarta Sans', sans-serif",
             background: c.bg,
-            minHeight: "100vh",
+            width: "100%",
+            aspectRatio: "21 / 9",
             padding: "28px 20px 40px",
             color: c.ink,
-            maxWidth: 480,
+            overflowY: "auto",
           }}
         >
           {/* App wordmark */}
